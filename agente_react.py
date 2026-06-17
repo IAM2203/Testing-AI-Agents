@@ -21,7 +21,20 @@ def hora_actual(_: str = "") -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def tipo_cambio(_:str = "") -> str:
-    return "18.32"
+    API_KEY = os.environ.get("TWELVEDATA_API_KEY")
+
+    if not API_KEY:
+        return "ERROR: falta la variable de entorno TWELVEDATA_API_KEY"
+    try:
+        url = "https://api.twelvedata.com/price"
+        params = {"symbol": "USD/MXN", "apikey": API_KEY}
+        r = requests.get(url, params=params, timeout=10)
+        datos = r.json()
+        if "price" in datos:
+            return datos["price"]
+        return f"ERROR: {datos.get('message', datos)}"
+    except Exception as err:
+        return f"ERROR: {err}"
 
 def precio_accion(ticker: str) -> str:
     ticker = ticker.strip().upper()
