@@ -1,0 +1,16 @@
+# Entorno virtual
+.venv/
+
+# Bytecode y caché de Python
+__pycache__/
+*.pyc
+
+# Secretos: claves de API 
+.env
+
+# macOS 
+.DS_Store
+
+# Configuración de editor / herramientas
+.vscode/
+.claude/
