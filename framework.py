@@ -6,6 +6,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain.agents import create_agent
 from langchain.messages import HumanMessage, AIMessage, ToolMessage
+from langgraph.checkpoint.memory import InMemorySaver
 
 def calculadora(expresion: str) -> str:
     '''Evalúa aritmética de Python. Ej: 2**10, 100*1.05, sqrt(16).'''
@@ -61,9 +62,13 @@ def precio_accion(ticker: str) -> str:
 #)
 
 llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
+    model="openai/gpt-oss-120b",
+    api_key=os.environ["GROQ_API_KEY"],
     temperature=0,
+    max_retries=3,
 )
+
+checkpointer = InMemorySaver()
 
 agente = create_agent(
     llm,
@@ -75,6 +80,7 @@ agente = create_agent(
         "nombres de variables ni llamadas a funciones: primero obtén cada número "
         "con su herramienta, y solo entonces escribe la operación con esos números."
     ),
+    checkpointer=checkpointer,
 )
 
 def correr_con_traza(pregunta: str):
@@ -96,10 +102,38 @@ def correr_con_traza(pregunta: str):
             print(f"\nRESPUESTA FINAL: {msg.content}")
 
 if __name__ == "__main__":
-    correr_con_traza("Si compro 5 acciones de MSFT, ¿cuánto gastaría en pesos?")
-#    resp = agente.invoke({
-#        "messages": [
-#            {"role": "user", "content": "Si compro 5 acciones de MSFT, ¿cuánto gastaría en pesos?"}
-#        ]
-#    })
-#    print(resp["messages"][-1].content)
+    # Definimos el thread_id para que el checkpointer mantenga la memoria
+    # de toda esta sesión en específico.
+    config = {"configurable": {"thread_id": "sesion-interactiva-1"}}
+
+    print("================================================================")
+    print("🤖 Agente Financiero y Matemático Iniciado.")
+    print("💡 Escribe tu pregunta y presiona Enter.")
+    print("🚪 Escribe 'salir', 'exit' o 'quit' para terminar la conversación.")
+    print("================================================================\n")
+
+    while True:
+        # 1. Esperamos la entrada del usuario en la terminal
+        pregunta = input("Tú: ")
+
+        # 2. Verificamos si el usuario quiere terminar el programa
+        comando_salida = pregunta.strip().lower()
+        if comando_salida in ["salir", "exit", "quit", "adios", "adiós"]:
+            print("\nAgente: ¡Nos vemos! Apagando el sistema...")
+            break
+
+        # Evitamos enviar mensajes vacíos si presionas Enter por accidente
+        if not pregunta.strip():
+            continue
+
+        # 3. Invocamos al agente pasando la pregunta y la configuración de memoria
+        try:
+            respuesta = agente.invoke(
+                {"messages": [{"role": "user", "content": pregunta}]},
+                config,
+            )
+            # 4. Imprimimos el contenido del último mensaje (la respuesta del agente)
+            print(f"Agente: {respuesta['messages'][-1].content}\n")
+            
+        except Exception as e:
+            print(f"\n⚠️ Ocurrió un error: {e}\n")
