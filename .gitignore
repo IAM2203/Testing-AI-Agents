@@ -14,3 +14,6 @@ __pycache__/
 # Configuración de editor / herramientas
 .vscode/
 .claude/
+
+# Archivos diversos
+memoria.db*

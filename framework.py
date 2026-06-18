@@ -6,7 +6,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain.agents import create_agent
 from langchain.messages import HumanMessage, AIMessage, ToolMessage
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 def calculadora(expresion: str) -> str:
     '''Evalúa aritmética de Python. Ej: 2**10, 100*1.05, sqrt(16).'''
@@ -68,26 +68,9 @@ llm = ChatGroq(
     max_retries=3,
 )
 
-checkpointer = InMemorySaver()
-
-agente = create_agent(
-    llm,
-    tools=[calculadora, hora_actual, tipo_cambio, precio_accion],
-    system_prompt=(
-        "Usa las herramientas de inmediato; nunca pidas permiso ni digas que no "
-        "tienes acceso. Llama UNA herramienta a la vez y ESPERA su resultado antes "
-        "de la siguiente. La calculadora solo acepta números literales, nunca "
-        "nombres de variables ni llamadas a funciones: primero obtén cada número "
-        "con su herramienta, y solo entonces escribe la operación con esos números."
-    ),
-    checkpointer=checkpointer,
-)
-
 def correr_con_traza(pregunta: str):
     entrada = {"messages": [{"role": "user", "content": pregunta}]}
 
-    # stream_mode="values" -> emite el estado COMPLETO tras cada paso;
-    # miramos el mensaje más nuevo de cada estado.
     for estado in agente.stream(entrada, stream_mode="values"):
         msg = estado["messages"][-1]
 
@@ -102,38 +85,47 @@ def correr_con_traza(pregunta: str):
             print(f"\nRESPUESTA FINAL: {msg.content}")
 
 if __name__ == "__main__":
-    # Definimos el thread_id para que el checkpointer mantenga la memoria
-    # de toda esta sesión en específico.
-    config = {"configurable": {"thread_id": "sesion-interactiva-1"}}
 
-    print("================================================================")
-    print("🤖 Agente Financiero y Matemático Iniciado.")
-    print("💡 Escribe tu pregunta y presiona Enter.")
-    print("🚪 Escribe 'salir', 'exit' o 'quit' para terminar la conversación.")
-    print("================================================================\n")
+    with SqliteSaver.from_conn_string("memoria.db") as checkpointer:
 
-    while True:
-        # 1. Esperamos la entrada del usuario en la terminal
-        pregunta = input("Tú: ")
+        agente = create_agent(
+            llm,
+            tools=[calculadora, hora_actual, tipo_cambio, precio_accion],
+            system_prompt=(
+                "Usa las herramientas de inmediato; nunca pidas permiso ni digas que no "
+                "tienes acceso. Llama UNA herramienta a la vez y ESPERA su resultado antes "
+                "de la siguiente. La calculadora solo acepta números literales, nunca "
+                "nombres de variables ni llamadas a funciones: primero obtén cada número "
+                "con su herramienta, y solo entonces escribe la operación con esos números."
+            ),
+            checkpointer=checkpointer,
+        )
 
-        # 2. Verificamos si el usuario quiere terminar el programa
-        comando_salida = pregunta.strip().lower()
-        if comando_salida in ["salir", "exit", "quit", "adios", "adiós"]:
-            print("\nAgente: ¡Nos vemos! Apagando el sistema...")
-            break
+        config = {"configurable": {"thread_id": "sesion-interactiva-1"}}
 
-        # Evitamos enviar mensajes vacíos si presionas Enter por accidente
-        if not pregunta.strip():
-            continue
+        print("================================================================")
+        print("🤖 Agente Financiero y Matemático Iniciado.")
+        print("💡 Escribe tu pregunta y presiona Enter.")
+        print("🚪 Escribe 'salir', 'exit' o 'quit' para terminar la conversación.")
+        print("================================================================\n")
 
-        # 3. Invocamos al agente pasando la pregunta y la configuración de memoria
-        try:
-            respuesta = agente.invoke(
-                {"messages": [{"role": "user", "content": pregunta}]},
-                config,
-            )
-            # 4. Imprimimos el contenido del último mensaje (la respuesta del agente)
-            print(f"Agente: {respuesta['messages'][-1].content}\n")
-            
-        except Exception as e:
-            print(f"\n⚠️ Ocurrió un error: {e}\n")
+        while True:
+            pregunta = input("Tú: ")
+
+            comando_salida = pregunta.strip().lower()
+            if comando_salida in ["salir", "exit", "quit", "adios", "adiós"]:
+                print("\nAgente: ¡Nos vemos! Apagando el sistema...")
+                break
+
+            if not pregunta.strip():
+                continue
+
+            try:
+                respuesta = agente.invoke(
+                    {"messages": [{"role": "user", "content": pregunta}]},
+                    config,
+                )
+                print(f"Agente: {respuesta['messages'][-1].content}\n")
+
+            except Exception as e:
+                print(f"\n⚠️ Ocurrió un error: {e}\n")
