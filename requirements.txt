@@ -1,2 +1,7 @@
-google-genai==2.8.0
-requests==2.34.2
+google-genai
+langchain
+langchain-google-genai
+langchain-groq
+langgraph
+langgraph-checkpoint-sqlite
+requests
