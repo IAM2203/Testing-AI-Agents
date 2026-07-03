@@ -10,9 +10,9 @@ Most tutorials start with `create_agent(...)` and skip the part where you unders
 
 | # | Version | What it demonstrates |
 |---|---------|----------------------|
-| 1 | [`react-manual/`](./react-manual) | The ReAct loop (Thought → Action → Observation) implemented from raw text parsing, no framework, no native tool support |
-| 2 | [`native-function-calling/`](./native-function-calling) | Same tools, but delegating the reasoning loop to the model's built-in function calling |
-| 3 | [`langgraph-agent/`](./langgraph-agent) | A stateful agent with short-term memory (per-conversation) and long-term memory (across conversations) via LangGraph + SQLite |
+| 1 | [`react-manual/`](./agente_react.py) | The ReAct loop (Thought → Action → Observation) implemented from raw text parsing, no framework, no native tool support |
+| 2 | [`native-function-calling/`](./auto_agent.py) | Same tools, but delegating the reasoning loop to the model's built-in function calling |
+| 3 | [`langgraph-agent/`](./framework.py) | A stateful agent with short-term memory (per-conversation) and long-term memory (across conversations) via LangGraph + SQLite |
 
 ## 1. Manual ReAct Loop
 
