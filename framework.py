@@ -1,3 +1,9 @@
+'''
+Agente financiero/matemático con LangGraph + Groq.
+Memoria de corto plazo (checkpointer, por hilo) y largo plazo (store, entre conversaciones).
+Requiere: GROQ_API_KEY, TWELVEDATA_API_KEY en variables de entorno.
+'''
+
 import math
 import os
 import requests
@@ -11,8 +17,12 @@ from langchain.tools import tool, ToolRuntime
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.store.sqlite import SqliteStore
 
+
 def calculadora(expresion: str) -> str:
-    '''Evalúa aritmética de Python. Ej: 2**10, 100*1.05, sqrt(16).'''
+    '''Evalúa aritmética de Python de forma restringida (sin builtins, solofunciones de math). Ej: 2**10, 100*1.05, sqrt(16).
+    Nunca aceptes expresiones que vengan directo del usuario sin pasar por el agente:
+    eval() con builtins bloqueados reduce el riesgo pero no lo elimina.'''
+
     permitido = {k: getattr(math, k) for k in ("sqrt", "log", "exp", "pi", "e", "sin", "cos")}
     try:
         return str(eval(expresion, {"__builtins__": {}}, permitido))
@@ -25,7 +35,8 @@ def hora_actual() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def tipo_cambio() -> str:
-    '''devuelve el valor del tipo de cambio de dolar a peso mexicano actual.'''
+    '''Devuelve el tipo de cambio USD/MXN actual vía Twelve Data. Retorna un string "ERROR: ..." 
+    si falta la API key o si la API falla — el agente debe verificar ese prefijo antes de usar el valor como número.'''
     API_KEY = os.environ.get("TWELVEDATA_API_KEY")
 
     if not API_KEY:
@@ -42,7 +53,8 @@ def tipo_cambio() -> str:
         return f"ERROR: {err}"
 
 def precio_accion(ticker: str) -> str:
-    '''Devuelve el precio de una acción e USD. Ej, AAPL, NVDA.'''
+    '''Devuelve el precio actual de una acción en USD (ej. AAPL, NVDA) vía Twelve Data.
+    Retorna un string "ERROR: ..." si el ticker no existe o la API falla.'''
     ticker = ticker.strip().upper()
     API_KEY = os.environ.get("TWELVEDATA_API_KEY")
 
@@ -58,18 +70,6 @@ def precio_accion(ticker: str) -> str:
         return f"ERROR: {datos.get('message', datos)}"
     except Exception as err:
         return f"ERROR: {err}"
-    
-#llm = ChatGoogleGenerativeAI(
-#    model="gemini-2.5-flash",
-#    google_api_key=os.environ["GEMINI_API_KEY"],
-#)
-
-llm = ChatGroq(
-    model="openai/gpt-oss-120b",
-    api_key=os.environ["GROQ_API_KEY"],
-    temperature=0,
-    max_retries=3,
-)
 
 @tool
 def recordar(hecho: str, runtime: ToolRuntime) -> str:
@@ -88,6 +88,8 @@ def buscar_memoria(runtime: ToolRuntime) -> str:
     return "Sé esto del usuario:\n" + "\n".join(f"- {it.value['hecho']}" for it in items)
 
 def correr_con_traza(pregunta: str):
+    '''Corre el agente en modo streaming y muestra pensamiento, acción y observación
+    de cada paso. Útil para debug; el loop principal usa agente.invoke() sin traza.'''
     entrada = {"messages": [{"role": "user", "content": pregunta}]}
 
     for estado in agente.stream(entrada, stream_mode="values"):
@@ -104,7 +106,9 @@ def correr_con_traza(pregunta: str):
             print(f"\nRESPUESTA FINAL: {msg.content}")
 
 def extraer_y_guardar(mensaje_usuario: str, store):
-    """Revisa el mensaje del usuario y guarda hechos duraderos en la memoria de largo plazo."""
+    """Revisa el mensaje del usuario y guarda hechos duraderos en la memoria de largo plazo. Es una segunda pasada 
+    por el LLM, separada de la tool 'recordar': así el agente no tiene que decidir en el momento si algo es 
+    'memorizable', y no se le olvida."""
     instruccion = (
         "Extrae de este mensaje cualquier HECHO DURADERO sobre el usuario: su nombre, "
         "qué estudia, sus preferencias estables, datos personales que sigan siendo "
@@ -120,8 +124,23 @@ def extraer_y_guardar(mensaje_usuario: str, store):
         store.put(("memorias", "usuario"), str(uuid.uuid4()), {"hecho": hecho})
         print(f"[memoria] Guardé: {hecho}")
 
+#llm = ChatGoogleGenerativeAI(
+#    model="gemini-2.5-flash",
+#    google_api_key=os.environ["GEMINI_API_KEY"],
+#)
+
+llm = ChatGroq(
+    model="openai/gpt-oss-120b",
+    api_key=os.environ["GROQ_API_KEY"],
+    temperature=0,
+    max_retries=3,
+)
+
 if __name__ == "__main__":
 
+    # Dos bases de datos separadas: memoria.db (checkpointer) guarda el estado
+    # de la conversación por hilo; memoria_lp.db (store) guarda hechos sobre el
+    # usuario que persisten entre TODOS los hilos.
     with SqliteSaver.from_conn_string("memoria.db") as checkpointer, \
          SqliteStore.from_conn_string("memoria_lp.db") as store:
 
